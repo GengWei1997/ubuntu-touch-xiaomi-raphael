@@ -1,0 +1,14 @@
+# Android recovery fstab for the Redmi K20 Pro (raphael).
+# A-only slot, no super partition.
+#
+# Sources use /dev/block/by-name/*, which ueventd creates on its own.
+# userdata (sda31) is f2fs; a /data entry is mandatory for recovery to boot.
+#
+# <src>                        <mnt_point>          <type>  <mnt_flags and options>  <fs_mgr_flags>
+
+/dev/block/by-name/system      /system              ext4  ro,barrier=1              wait
+/dev/block/by-name/vendor      /vendor              ext4  ro,barrier=1              wait
+/dev/block/by-name/persist     /mnt/vendor/persist  ext4  noatime,nosuid,nodev      wait
+/dev/block/by-name/misc        /misc                emmc  defaults                  defaults
+/dev/block/by-name/userdata    /data                f2fs  noatime,nosuid,nodev      wait,check,formattable
+/dev/block/by-name/cache       /cache               ext4  noatime,nosuid,nodev      wait,check

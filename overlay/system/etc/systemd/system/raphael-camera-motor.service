@@ -1,0 +1,19 @@
+[Unit]
+Description=Keep the pop-up front camera in sync with the active camera
+Documentation=https://github.com/phhusson/treble_experimentations/issues/539
+After=lxc-android-config.service
+Wants=lxc-android-config.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# The script is not executable in the image, so run it through the interpreter.
+ExecStart=/usr/bin/python3 /usr/libexec/raphael-camera-motor
+Restart=always
+RestartSec=3
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

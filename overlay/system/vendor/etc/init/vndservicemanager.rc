@@ -1,0 +1,10 @@
+service vndservicemanager /vendor/bin/vndservicemanager /dev/vndbinder
+    class core
+    user system
+    group system readproc
+    writepid /dev/cpuset/system-background/tasks
+    shutdown critical
+
+    # Halium runs without selinuxfs and cannot switch the kernel LSM to SELinux,
+    # so use the stub library shipped in the Android system image.
+    setenv LD_PRELOAD /system/lib64/libselinux_stubs.so

@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# Device specific fixes, run by device-hacks.service after the Android
+# container has started.
+#
+# https://docs.ubports.com/en/latest/porting/UpdatePortsFor2004.html
+
+while [ ! -e /dev/socket/property_service ]; do sleep 0.1; done
+
+# hfd-service probes its vibrator backend once at start-up, before the HAL is
+# registered, and never retries. Restart it once servicemanager knows the HAL;
+# init.svc.* flips to "running" before the process reaches servicemanager.
+i=0
+while [ $i -lt 150 ]; do
+    if lxc-attach -n android -- /system/bin/service check \
+            android.hardware.vibrator.IVibrator/default 2>/dev/null \
+            | grep -q '^Service .*: found$'; then
+        systemctl restart hfd-service
+        break
+    fi
+    sleep 0.2; i=$((i+1))
+done
+
+# qcacld only creates /dev/wlan; writing ON to it loads the host driver, which
+# nothing does under Halium. Same sequence as the official samsung-q2q port,
+# minus modprobe: CONFIG_QCA_CLD_WLAN is built in here.
+i=0
+while [ "$(getprop init.svc.vendor.wifi_hal_legacy)" != "running" ] && [ $i -lt 100 ]; do
+    sleep 0.5; i=$((i+1))
+done
+i=0
+while [ ! -e /dev/wlan ] && [ $i -lt 100 ]; do sleep 0.2; i=$((i+1)); done
+if [ -e /dev/wlan ]; then
+    echo ON > /dev/wlan 2>/dev/null
+fi
+
+# ayatana-indicator-power runs as phablet, the LED class devices are root only.
+chmod 0666 /sys/class/leds/led:torch_0/brightness 2>/dev/null
+chmod 0666 /sys/class/leds/led:switch_0/brightness 2>/dev/null
+chmod 0666 /sys/class/leds/flashlight/brightness 2>/dev/null
+
+# The unit ships inside the Halium overlay, which is mounted after systemd has
+# built the boot transaction, so it never receives a start job on its own.
+systemctl start --no-block raphael-camera-motor.service

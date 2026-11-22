@@ -1,0 +1,41 @@
+raphael:
+  Names:
+    - raphael
+    - Redmi K20 Pro
+    - Mi 9T Pro
+  Vendor: Xiaomi
+  PrettyName: Redmi K20 Pro
+  DeviceType: phone
+  GridUnit: 23
+  PrimaryOrientation: Portrait
+  SupportedOrientations:
+    - Portrait
+    - InvertedPortrait
+    - Landscape
+    - InvertedLandscape
+  MirAndroidPlatformServerBackpressure:
+    - false
+  MirAndroidPlatformServerPartialUpdates:
+    - true
+  MirAndroidPlatformServerEglSync:
+    - false
+  MirAndroidPlatformClientEglFlush:
+    - "!/usr/bin/unity8,!/usr/bin/lomiri,all"
+  FilesystemEncryption: true
+  OfonoPlugin: binder
+  OfonoImplementsIms: true
+  RepowerdQtiPerfBooster: true
+
+  # The DTS names the torch "flashlight", which leds-qpnp-flash-v2 ignores;
+  # led:torch_0 and led:switch_0 are the nodes it accepts.
+  FlashlightSysfsPath:
+    - /sys/class/leds/led:torch_0/brightness
+  FlashlightSwitchPath:
+    - /sys/class/leds/led:switch_0/brightness
+
+  # "<path>|<on>|<off>"
+  DoubleTapToWake:
+    - /sys/touchpanel/double_tap|1|0
+
+  # Two backlight nodes exist; autodetection can pick the wrong one.
+  BacklightSysfsPath: /sys/class/backlight/panel0-backlight

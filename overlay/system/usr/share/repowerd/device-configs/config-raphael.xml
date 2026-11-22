@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+/*
+** Copyright 2009, The Android Open Source Project
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**     http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
+*/
+-->
+
+<!-- Device configuration for the Redmi K20 Pro (raphael / SM8150).
+     repowerd loads config-default.xml first and then config-$device_name.xml,
+     so only the values that differ need to be listed here. -->
+
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <!-- Enable automatic brightness in Settings.
+         Without this repowerd reports
+         getBrightnessParams -> (dim, min, max, default, ab_supported=false)
+         and the "Automatic brightness" switch never appears. -->
+    <bool name="config_automatic_brightness_available">true</bool>
+
+    <!-- The brightness scale must match the kernel backlight device that
+         repowerd actually opens: /sys/class/backlight/panel0-backlight.
+
+         This panel is a Samsung EA8076 AMOLED driven with
+         qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs" and
+         qcom,mdss-dsi-bl-max-level = <2047>, so sde_connector.c registers
+         panel0-backlight with max_brightness 2047.
+
+         Do not use 4095 here: that is the PMIC WLED node
+         (/sys/class/backlight/backlight), which this AMOLED does not use and
+         which is now disabled in the kernel DTS precisely so repowerd cannot
+         pick it (upstream repowerd issue #11). -->
+    <integer name="config_screenBrightnessSettingMaximum">2047</integer>
+
+    <!-- Roughly 25% of full scale. -->
+    <integer name="config_screenBrightnessSettingDefault">512</integer>
+
+    <!-- The panel's own floor, matching qcom,mdss-dsi-bl-min-level = <2>.
+         Going below it just wastes slider travel. -->
+    <integer name="config_screenBrightnessSettingMinimum">2</integer>
+
+    <!-- Brightness used when dimming on inactivity timeout. -->
+    <integer name="config_screenBrightnessDim">2</integer>
+
+    <!-- Auto brightness curve.
+         Levels are ambient lux values; the backlight array has one more entry
+         (N lux levels -> N+1 backlight values). Values are on the 0..2047
+         scale above and are monotonically non-decreasing.
+         The shape follows Android's own levels for this panel, rescaled to
+         2047 as the maximum. -->
+    <integer-array name="config_autoBrightnessLevels">
+        <item>1</item>
+        <item>4</item>
+        <item>12</item>
+        <item>20</item>
+        <item>40</item>
+        <item>65</item>
+        <item>95</item>
+        <item>140</item>
+        <item>200</item>
+        <item>350</item>
+        <item>650</item>
+        <item>1300</item>
+        <item>2000</item>
+        <item>3300</item>
+        <item>6000</item>
+    </integer-array>
+
+    <integer-array name="config_autoBrightnessLcdBacklightValues">
+        <item>80</item>
+        <item>100</item>
+        <item>130</item>
+        <item>170</item>
+        <item>225</item>
+        <item>300</item>
+        <item>390</item>
+        <item>500</item>
+        <item>620</item>
+        <item>775</item>
+        <item>950</item>
+        <item>1175</item>
+        <item>1425</item>
+        <item>1675</item>
+        <item>1900</item>
+        <item>2047</item>
+    </integer-array>
+</resources>

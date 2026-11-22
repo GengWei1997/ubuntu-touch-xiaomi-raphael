@@ -1,0 +1,4 @@
+# Recovery init additions for raphael (SM8150).
+#
+# Intentionally empty: the unified UBports recovery ramdisk already sets up
+# configfs, the USB gadget and adbd, and recovery.fstab uses /dev/block/by-name.

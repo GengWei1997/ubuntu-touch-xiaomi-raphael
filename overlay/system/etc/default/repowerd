@@ -1,0 +1,3 @@
+# Kept because repowerd.service has EnvironmentFile= on it. repowerd reads its
+# device configuration from /usr/share/repowerd/device-configs/config-raphael.xml,
+# and none of the variables this file used to set exist in the binary.

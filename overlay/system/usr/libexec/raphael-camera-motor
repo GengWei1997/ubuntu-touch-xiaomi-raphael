@@ -1,0 +1,292 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Keep the pop-up front camera in sync with the camera that is actually in use.
+#
+# The active camera list comes from `dumpsys media.camera` inside the Android
+# container, which is a read-only query and therefore does not take
+# cameraserver's single provider callback slot. The motor is driven through
+# vendor.xiaomi.hardware.motor@1.0 on /dev/hwbinder with python3-gbinder.
+#
+# Every move is gated on getMotorStatus(), because driving the motor to an end
+# it already occupies makes it grind; see
+# github.com/phhusson/treble_experimentations/issues/539. Transitions are
+# debounced the same way LineageOS' PopupCameraService does it.
+#
+# getMotorStatus() returns [transport_status, status], status being one of
+# 11 POPPED_UP, 13 RETRACTED, 14 TAKEBACK_JAMMED, 15 PRESSED, 19 REQUEST_CALIB.
+
+import os
+import sys
+import time
+import signal
+import subprocess
+
+import gbinder
+
+HWBINDER = "/dev/hwbinder"
+MOTOR_SERVICE = "vendor.xiaomi.hardware.motor@1.0::IMotor/default"
+MOTOR_IFACE = "vendor.xiaomi.hardware.motor@1.0::IMotor"
+
+# IMotor method codes, numbered in .hal declaration order. 0x0f000000.. are IBase.
+CODE_POPUP = 1
+CODE_TAKEBACK = 2
+CODE_GET_STATUS = 6
+
+ST_POPPED_UP = 11
+ST_RETRACTED = 13
+
+FRONT_CAMERA_ID = 1
+
+POLL_INTERVAL = 0.5     # seconds between dumpsys queries
+SETTLE_TIME = 1.5       # ignore transitions shorter than this (debounce)
+MOTOR_TIMEOUT = 5.0     # give up waiting for the motor to reach a state
+
+# Start-up reconciliation: mi.motor.daemon.so drives the camera to the top
+# position when the HAL service starts and leaves it there, and nothing in
+# Android retracts it afterwards. Wait for that pass to settle, then retract.
+STARTUP_TIMEOUT = 25.0  # give up waiting for the daemon to settle
+STARTUP_STABLE = 3.0    # motor status must be unchanged this long
+
+# How long a new camera state has to hold before the motor is moved.
+CLOSE_DELAY = SETTLE_TIME
+
+
+def log(msg):
+    sys.stderr.write("raphael-camera-motor: %s\n" % msg)
+    sys.stderr.flush()
+
+
+class Motor:
+    def __init__(self):
+        self.sm = gbinder.ServiceManager(HWBINDER)
+        self.remote = None
+        self.client = None
+        self._connect()
+
+    def _connect(self):
+        remote, status = self.sm.get_service_sync(MOTOR_SERVICE)
+        if remote is None:
+            self.remote = None
+            self.client = None
+            return False
+        self.remote = remote
+        self.client = gbinder.Client(remote, [[MOTOR_IFACE, 8]])
+        return True
+
+    def status(self):
+        """Return the motor status, or None if the service is unavailable."""
+        if self.client is None and not self._connect():
+            return None
+        try:
+            req = self.client.new_request(CODE_GET_STATUS)
+            reply, transport = self.client.transact_sync_reply(
+                CODE_GET_STATUS, req)
+            if reply is None:
+                return None
+            reader = reply.init_reader()
+            if reader is None:
+                return None
+            last = None
+            # Read defensively: some builds return only one word.
+            for _ in range(4):
+                if reader.bytes_remaining() < 4:
+                    break
+                ok, value = reader.read_int32()
+                if not ok:
+                    break
+                last = value
+            return last
+        except Exception as exc:              # noqa: BLE001
+            log("getMotorStatus failed: %s" % exc)
+            self.client = None
+            self.remote = None
+            return None
+
+    def _move(self, code):
+        if self.client is None and not self._connect():
+            return False
+        try:
+            req = self.client.new_request(code)
+            req.append_int32(1)               # cookie, ignored by the HAL
+            reply, transport = self.client.transact_sync_reply(code, req)
+            return reply is not None or transport == 0
+        except Exception as exc:              # noqa: BLE001
+            log("motor transaction %d failed: %s" % (code, exc))
+            self.client = None
+            self.remote = None
+            return False
+
+    def wait_for(self, wanted, timeout=MOTOR_TIMEOUT):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.status() == wanted:
+                return True
+            time.sleep(0.25)
+        return False
+
+    def popup(self):
+        current = self.status()
+        if current is None:
+            log("cannot read motor status, refusing to pop up")
+            return False
+        if current == ST_POPPED_UP:
+            return True
+        log("front camera in use, popping up (status %s)" % current)
+        if not self._move(CODE_POPUP):
+            return False
+        return self.wait_for(ST_POPPED_UP)
+
+    def takeback(self):
+        current = self.status()
+        if current is None:
+            log("cannot read motor status, refusing to retract")
+            return False
+        if current == ST_RETRACTED:
+            return True
+        log("front camera released, retracting (status %s)" % current)
+        if not self._move(CODE_TAKEBACK):
+            return False
+        return self.wait_for(ST_RETRACTED)
+
+    def await_calibration(self, timeout=STARTUP_TIMEOUT,
+                          stable=STARTUP_STABLE):
+        """Wait for the vendor daemon's start-up calibration to finish.
+
+        The daemon only drives the motor up during this pass, so a POPPED_UP
+        reading that held for `stable` seconds means it is over. A RETRACTED
+        reading is not taken as "nothing to do", because the daemon may not
+        have reached the motor yet; keep waiting until the timeout.
+
+        Returns the status the motor ended up in, or None if it could not be
+        read at all.
+        """
+        deadline = time.monotonic() + timeout
+        out_since = None
+
+        while time.monotonic() < deadline:
+            status = self.status()
+            now = time.monotonic()
+            if status == ST_POPPED_UP:
+                if out_since is None:
+                    out_since = now
+                elif now - out_since >= stable:
+                    return status
+            else:
+                out_since = None
+            time.sleep(0.25)
+
+        return self.status()
+
+
+def front_camera_active():
+    """True if cameraserver reports an open session on the front camera.
+
+    Returns None when the query itself fails, so callers can avoid acting on
+    unreliable information.
+    """
+    try:
+        out = subprocess.run(
+            ["lxc-attach", "-n", "android", "--",
+             "sh", "-c",
+             "dumpsys media.camera 2>/dev/null | "
+             "sed -n '/Active Camera Clients/,/Allowed user/p'"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception as exc:                  # noqa: BLE001
+        log("dumpsys query failed: %s" % exc)
+        return None
+
+    if out.returncode != 0:
+        return None
+
+    # An empty list looks exactly like:
+    #     Active Camera Clients:
+    #     []
+    # so only a non-empty parse counts as "in use".
+    for line in out.stdout.splitlines():
+        if "Camera ID:" not in line:
+            continue
+        try:
+            cam_id = int(line.split("Camera ID:")[1].split(",")[0].strip())
+        except (IndexError, ValueError):
+            continue
+        if cam_id == FRONT_CAMERA_ID:
+            return True
+    return False
+
+
+def main():
+    motor = Motor()
+    initial = motor.status()
+    log("started, motor status %s" % initial)
+
+    # Undo the vendor daemon's start-up calibration: it leaves the camera out
+    # and nothing in Android retracts it. Gating on getMotorStatus() is
+    # mandatory, otherwise the stepper grinds against the end stop.
+    settled = motor.await_calibration()
+    if settled is None:
+        log("cannot read motor status, not touching the camera")
+    elif front_camera_active():
+        log("front camera already in use, leaving it out")
+    elif settled == ST_RETRACTED:
+        log("camera already retracted, nothing to do")
+    else:
+        log("calibration left the camera out (status %s), retracting"
+            % settled)
+        if not motor.takeback():
+            log("start-up retraction did not complete")
+
+    running = True
+
+    def stop(_signum, _frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    # Debounce state: remember the last observed value and when it changed, and
+    # act once a new value has been stable for CLOSE_DELAY. `applied` records
+    # what has already been done, so a stable state is acted on exactly once.
+    # Seed it from the current state so the reconciliation above is not redone.
+    applied = front_camera_active()
+    observed = None
+    observed_at = time.monotonic()
+
+    while running:
+        active = front_camera_active()
+        now = time.monotonic()
+
+        if active is None:
+            # Transient failure (container busy). Don't touch the motor.
+            time.sleep(POLL_INTERVAL)
+            continue
+
+        if active != observed:
+            # Value changed: restart the settle timer.
+            observed = active
+            observed_at = now
+            time.sleep(POLL_INTERVAL)
+            continue
+
+        # Stable long enough and not handled yet?
+        if now - observed_at >= CLOSE_DELAY and observed != applied:
+            if active:
+                ok = motor.popup()
+            else:
+                ok = motor.takeback()
+            # Mark as handled even on failure: retrying a jammed motor in a
+            # tight loop is worse than leaving it for the next real change
+            # or the next daemon start.
+            applied = observed
+            if not ok:
+                log("motor action for state %s did not complete" % active)
+
+        time.sleep(POLL_INTERVAL)
+
+    log("stopping")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

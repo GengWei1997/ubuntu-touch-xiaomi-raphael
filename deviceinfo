@@ -1,0 +1,51 @@
+#
+# deviceinfo for Redmi K20 Pro (raphael)
+#
+# https://docs.ubports.com/en/latest/porting/build_and_boot/standalone_kernel_build.html
+#
+
+deviceinfo_name="Redmi K20 Pro"
+deviceinfo_manufacturer="Xiaomi"
+deviceinfo_codename="raphael"
+deviceinfo_arch="aarch64"
+deviceinfo_halium_version="11"
+
+deviceinfo_kernel_source="https://github.com/GengWei1997/kernel_xiaomi_raphael"
+deviceinfo_kernel_source_branch="halium-11.0"
+deviceinfo_kernel_defconfig="raphael_user_defconfig halium.config"
+deviceinfo_kernel_clang_compile="true"
+
+# The device dtsi files do not parse with the host dtc 1.4.5.
+deviceinfo_kernel_use_dtc_ext="true"
+
+deviceinfo_kernel_cmdline="console=ttyMSM0,115200n8 console=tty0 androidboot.hardware=qcom androidboot.console=ttyMSM0 androidboot.memcg=1 lpm_levels.sleep_disabled=1 msm_rtb.filter=0x237 service_locator.enable=1 swiotlb=2048 loop.max_part=7 androidboot.usbcontroller=a600000.dwc3 cgroup.memory=nokmem,nosocket systempart=/dev/disk/by-partlabel/system msm_drm.dsi_display0=dsi_ss_fhd_ea8076_cmd_display:"
+
+deviceinfo_bootimg_header_version="0"
+deviceinfo_flash_pagesize="4096"
+deviceinfo_flash_offset_base="0x00000000"
+deviceinfo_flash_offset_kernel="0x00008000"
+deviceinfo_flash_offset_ramdisk="0x00000000"
+deviceinfo_flash_offset_second="0x00000000"
+deviceinfo_flash_offset_tags="0x00000100"
+deviceinfo_bootimg_os_version="11"
+deviceinfo_bootimg_os_patch_level="2021-11-05"
+
+# deviceinfo_bootimg_partition_size is not set: there is no AVB here, so it
+# would only pad the image with ~103 MB of zeros.
+
+deviceinfo_dtbo="qcom/raphael-sm8150-overlay.dtbo"
+
+deviceinfo_use_unified_recovery="true"
+deviceinfo_unified_recovery_ui_density="xxhdpi"
+deviceinfo_has_recovery_partition="true"
+deviceinfo_recovery_partition_size="67108864"
+
+# deviceinfo_prebuilt_recovery_ramdisk_source is not set: the build tools
+# default to the halium-14.0 CI ramdisk, which is what the official ports use.
+
+deviceinfo_system_partition_size="3584M"
+deviceinfo_rootfs_image_sector_size="4096"
+
+deviceinfo_use_overlaystore="true"
+
+deviceinfo_ubuntu_touch_release="focal"

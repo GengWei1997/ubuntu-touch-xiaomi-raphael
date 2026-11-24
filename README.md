@@ -1,5 +1,9 @@
 # Redmi K20 Pro (raphael)
 
+## 构建
+
+参考官方指南：<https://docs.ubports.com/zh-cn/latest/>
+
 ## 刷机
 
 1. 先刷卡刷 `PixelExperience_raphael-11.0-20211123-2039-OFFICIAL.zip`
